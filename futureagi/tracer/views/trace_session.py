@@ -60,8 +60,8 @@ from tracer.models.project import Project
 from tracer.models.trace import Trace
 
 session_logger = structlog.get_logger(__name__)
-from tracer.models.trace_session import TraceSession
 from tfc.utils.pagination import ExtendedPageNumberPagination
+from tracer.models.trace_session import TraceSession
 from tracer.serializers.eval_task import PaginationQuerySerializer
 from tracer.serializers.trace_session import (
     TraceSessionExportSerializer,
@@ -681,6 +681,7 @@ class TraceSessionView(BaseModelViewSetMixin, ModelViewSet):
                     WHERE project_id = %(project_id)s
                       AND _peerdb_is_deleted = 0
                       AND trace_session_id IS NOT NULL
+                      AND trace_session_id != toUUID('00000000-0000-0000-0000-000000000000')
                       AND (parent_span_id IS NULL OR parent_span_id = '')
                     GROUP BY trace_session_id
                 )
@@ -696,12 +697,18 @@ class TraceSessionView(BaseModelViewSetMixin, ModelViewSet):
                 search_clause = (
                     f"AND toString({ch_column}) ILIKE %(search)s" if search else ""
                 )
+                nil_uuid_clause = (
+                    f"AND {ch_column} != toUUID('00000000-0000-0000-0000-000000000000')"
+                    if is_uuid
+                    else ""
+                )
                 query = f"""
                 SELECT DISTINCT {select_expr} AS val
                 FROM spans
                 WHERE project_id = %(project_id)s
                   AND _peerdb_is_deleted = 0
                   AND {ch_column} IS NOT NULL
+                  {nil_uuid_clause}
                   AND (parent_span_id IS NULL OR parent_span_id = '')
                   {search_clause}
                 ORDER BY val
@@ -1911,6 +1918,4 @@ class TraceSessionView(BaseModelViewSetMixin, ModelViewSet):
             return self._gm.success_response(paginated.data)
         except Exception as e:
             logger.exception(f"Error in fetching session eval logs: {str(e)}")
-            return self._gm.bad_request(
-                f"Error fetching session eval logs: {str(e)}"
-            )
+            return self._gm.bad_request(f"Error fetching session eval logs: {str(e)}")

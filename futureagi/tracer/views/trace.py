@@ -3242,11 +3242,19 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
                     data = getattr(trace, f"metric_{config.id}")
                     if data and "score" in data:
                         score = data["score"]
-                        result[str(config.id)] = round(score, 2) if score is not None else None
+                        result[str(config.id)] = (
+                            round(score, 2) if score is not None else None
+                        )
                     elif data:
                         for key, value in data.items():
-                            score = value["score"] if isinstance(value, dict) and "score" in value else None
-                            result[str(config.id) + "**" + key] = round(score, 2) if score is not None else None
+                            score = (
+                                value["score"]
+                                if isinstance(value, dict) and "score" in value
+                                else None
+                            )
+                            result[str(config.id) + "**" + key] = (
+                                round(score, 2) if score is not None else None
+                            )
 
                 # Add Root Span Annotations
                 for label in annotation_labels:
@@ -4786,9 +4794,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
         eval_config_ids = []
         if org_scope:
             eval_configs = CustomEvalConfig.objects.filter(
-                id__in=EvalLogger.objects.filter(
-                    trace__project_id__in=org_project_ids
-                )
+                id__in=EvalLogger.objects.filter(trace__project_id__in=org_project_ids)
                 .values("custom_eval_config_id")
                 .distinct(),
                 deleted=False,
@@ -5263,9 +5269,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
                         if isinstance(scores, dict):
                             if scores.get("per_choice"):
                                 metric_entry["output"] = [
-                                    k
-                                    for k, v in scores["per_choice"].items()
-                                    if v > 0
+                                    k for k, v in scores["per_choice"].items() if v > 0
                                 ]
                                 metric_entry["output_type"] = "str_list"
                             elif "str_list" in scores and scores["str_list"]:
@@ -5452,7 +5456,12 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
                 "cost": row.get("cost"),
                 "model": row.get("model"),
                 "provider": row.get("provider"),
-                "session_id": row.get("trace_session_id"),
+                "session_id": (
+                    None
+                    if str(row.get("trace_session_id", ""))
+                    == "00000000-0000-0000-0000-000000000000"
+                    else row.get("trace_session_id")
+                ),
                 "tags": row.get("trace_tags") or [],
             }
 
