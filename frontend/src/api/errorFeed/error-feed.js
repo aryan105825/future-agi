@@ -180,7 +180,11 @@ export const useErrorFeedDeepAnalysis = (clusterId, traceId, options = {}) => {
       }),
     select: (res) => res?.data?.result,
     enabled,
-    refetchInterval: (data) => (data?.status === "running" ? 5000 : false),
+    // React Query v5 passes the Query instance to this callback, not the
+    // selected data. Read the running flag off `query.state.data` (the raw
+    // axios response — `select` doesn't apply here).
+    refetchInterval: (query) =>
+      query.state.data?.data?.result?.status === "running" ? 5000 : false,
     refetchIntervalInBackground: true,
   });
 };
