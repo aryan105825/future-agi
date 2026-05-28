@@ -359,7 +359,7 @@ const CallLogsGrid = React.forwardRef(function CallLogsGrid(
   // Propagate reorder to parent so the View columns dropdown stays in sync.
   const onColumnMoved = useCallback(
     (params) => {
-      if (!params.finished || typeof onColumnsChange !== "function") return;
+      if (!params.finished || !params.api || typeof onColumnsChange !== "function") return;
       const newOrder = params.api
         .getColumnState()
         .map((s) => s.colId)
