@@ -60,6 +60,10 @@ const ObserveToolbar = ({
   filterDefinition,
   defaultFilter,
   onApplyExtraFilters,
+  // Called when the panel's Clear all (or empty Apply) resets extraFilters
+  // — owns the localStorage cleanup parent state can't reach from here.
+  onClearExtraFilters,
+  onClearCompareExtraFilters,
   // Filter fields override (for sessions/users)
   filterFields,
   // LLM Tracing tab ("trace" | "spans") — when set, TraceFilterPanel
@@ -425,8 +429,14 @@ const ObserveToolbar = ({
             onApply={(newFilters) => {
               setPanelFilters(newFilters);
               if (!newFilters || newFilters.length === 0) {
-                if (filterTarget === "compare" && onApplyCompareExtraFilters) {
-                  onApplyCompareExtraFilters([]);
+                if (filterTarget === "compare") {
+                  if (onClearCompareExtraFilters) {
+                    onClearCompareExtraFilters();
+                  } else {
+                    onApplyCompareExtraFilters?.([]);
+                  }
+                } else if (onClearExtraFilters) {
+                  onClearExtraFilters();
                 } else {
                   onApplyExtraFilters?.([]);
                 }
@@ -681,6 +691,8 @@ ObserveToolbar.propTypes = {
   excludeSimulationCalls: PropTypes.bool,
   onToggleSimulationCalls: PropTypes.func,
   onApplyExtraFilters: PropTypes.func,
+  onClearExtraFilters: PropTypes.func,
+  onClearCompareExtraFilters: PropTypes.func,
   filterFields: PropTypes.array,
   tab: PropTypes.oneOf(["trace", "spans"]),
   graphFilters: PropTypes.array,

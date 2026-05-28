@@ -2101,6 +2101,19 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     ? `user-filters-${userIdForUserMode}`
     : `observe-filters-${observeId}`;
 
+  // User-initiated clears (popover "Clear all" / chip-strip "Clear all").
+  // Wipes the localStorage entry too — without this the saved filter
+  // resurrects on the next project mount because the load effect for
+  // `filtersStorageKey` restores any non-empty extraFilters it finds.
+  const clearPrimaryExtraFilters = useCallback(() => {
+    setExtraFilters([]);
+    localStorage.removeItem(filtersStorageKey);
+  }, [setExtraFilters, filtersStorageKey]);
+  const clearCompareExtraFilters = useCallback(() => {
+    setCompareExtraFilters([]);
+    localStorage.removeItem(filtersStorageKey);
+  }, [setCompareExtraFilters, filtersStorageKey]);
+
   // Pending custom cols, queued until the backend returns real columns so
   // the grid doesn't render with only-custom-col headers mid-load. One ref
   // per grid instance — a shared ref would race across the 4 mounted grids.
@@ -3445,11 +3458,13 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
                 setIsPrimaryFilterOpen(!isPrimaryFilterOpen);
               }}
               onApplyExtraFilters={setExtraFilters}
+              onClearExtraFilters={clearPrimaryExtraFilters}
               graphFilters={extraFilters}
               isFilterOpen={isPrimaryFilterOpen}
               externalFilterAnchor={externalFilterAnchor}
               filterTarget={filterTarget}
               onApplyCompareExtraFilters={setCompareExtraFilters}
+              onClearCompareExtraFilters={clearCompareExtraFilters}
               filters={
                 selectedTab === "trace"
                   ? primaryTraceFilters
