@@ -7,9 +7,9 @@ from model_hub.models.evals_metric import EvalTemplate
 from model_hub.utils.few_shot_examples import expand_static_few_shot_examples
 
 
-def _create_dataset_with_rows(organization):
+def _create_dataset_with_rows(organization, name="few-shot-source", row_count=2):
     dataset = Dataset.objects.create(
-        name="few-shot-source",
+        name=name,
         organization=organization,
     )
     input_column = Column.objects.create(
@@ -31,10 +31,10 @@ def _create_dataset_with_rows(organization):
         source=SourceChoices.OTHERS.value,
     )
 
-    rows = [Row.objects.create(dataset=dataset, order=i) for i in range(2)]
+    rows = [Row.objects.create(dataset=dataset, order=i) for i in range(row_count)]
     values = [
-        ("input 1", "output 1", "Passed"),
-        ("input 2", "output 2", "Failed"),
+        (f"input {i + 1}", f"output {i + 1}", "Passed" if i % 2 == 0 else "Failed")
+        for i in range(row_count)
     ]
     for row, (input_value, output_value, score_value) in zip(rows, values, strict=True):
         Cell.objects.create(
@@ -90,6 +90,51 @@ def test_expand_static_few_shot_examples_preserves_literal_examples(
 
     assert examples[0] == literal
     assert examples[1:] == [
+        {"input": "input 1", "output": "output 1", "score": "Passed"},
+        {"input": "input 2", "output": "output 2", "score": "Failed"},
+    ]
+
+
+@pytest.mark.django_db
+def test_expand_static_few_shot_examples_caps_dataset_rows(organization):
+    dataset = _create_dataset_with_rows(
+        organization,
+        row_count=25,
+    )
+
+    examples = expand_static_few_shot_examples(
+        [{"id": str(dataset.id), "name": dataset.name}],
+        organization=organization,
+    )
+
+    assert len(examples) == 20
+    assert examples[-1] == {
+        "input": "input 20",
+        "output": "output 20",
+        "score": "Failed",
+    }
+
+
+@pytest.mark.django_db
+def test_expand_static_few_shot_examples_batches_dataset_queries(
+    organization,
+    django_assert_num_queries,
+):
+    first_dataset = _create_dataset_with_rows(organization, name="first")
+    second_dataset = _create_dataset_with_rows(organization, name="second")
+
+    with django_assert_num_queries(4):
+        examples = expand_static_few_shot_examples(
+            [
+                {"id": str(first_dataset.id), "name": first_dataset.name},
+                {"id": str(second_dataset.id), "name": second_dataset.name},
+            ],
+            organization=organization,
+        )
+
+    assert examples == [
+        {"input": "input 1", "output": "output 1", "score": "Passed"},
+        {"input": "input 2", "output": "output 2", "score": "Failed"},
         {"input": "input 1", "output": "output 1", "score": "Passed"},
         {"input": "input 2", "output": "output 2", "score": "Failed"},
     ]
