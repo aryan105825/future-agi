@@ -251,9 +251,17 @@ from tracer.serializers.eval_task import (
     EvalTaskSerializer,
     PaginationQuerySerializer,
 )
-from tracer.utils.eval_tasks import parsing_evaltask_filters, run_for_processed_spans
+from tracer.utils.annotations import build_annotation_subqueries
+from tracer.utils.eval_tasks import (
+    annotation_source_q_for_row_type,
+    parsing_evaltask_filters,
+    run_for_processed_spans,
+)
 from tracer.utils.filters import FilterEngine
-from tracer.utils.helper import get_default_eval_task_config
+from tracer.utils.helper import (
+    get_annotation_labels_for_project,
+    get_default_eval_task_config,
+)
 
 
 class EvalTaskView(BaseModelViewSetMixin, ModelViewSet):
@@ -1469,12 +1477,22 @@ class EvalTaskView(BaseModelViewSetMixin, ModelViewSet):
             )
             filters = update_fields.get("filters") or eval_task.filters
 
-            # Validate filters and get total spans count
-            parsed_filters, parsed_filter_anns = parsing_evaltask_filters(filters)
+            # build_annotation_subqueries is needed here too: per-label
+            # ANNOTATION filters reference columns it adds (else FieldError).
+            parsed_filters, parsed_filter_anns = parsing_evaltask_filters(
+                filters, row_type=eval_task.row_type
+            )
+            annotation_labels = get_annotation_labels_for_project(
+                eval_task.project_id
+            )
+            span_qs = build_annotation_subqueries(
+                ObservationSpan.objects.all(),
+                annotation_labels,
+                eval_task.project.organization,
+                source_q=annotation_source_q_for_row_type(eval_task.row_type),
+            )
             total_spans = (
-                ObservationSpan.objects.annotate(**parsed_filter_anns)
-                .filter(parsed_filters)
-                .count()
+                span_qs.annotate(**parsed_filter_anns).filter(parsed_filters).count()
             )
 
             if total_spans == 0:
