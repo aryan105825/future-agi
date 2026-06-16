@@ -55,4 +55,4 @@ class APIKeyBulkView(APIView):
             return self._gm.success_response(result)
         except Exception as e:
             logger.exception("api_key_bulk_error", error=str(e))
-            return self._gm.bad_request(str(e))
+            return self._gm.internal_server_error_response("Internal server error")
