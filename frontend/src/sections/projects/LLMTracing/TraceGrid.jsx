@@ -353,30 +353,16 @@ const TraceGrid = React.forwardRef(
       const annotationCols = columns.filter(
         (c) => c?.groupBy === "Annotation Metrics",
       );
-      const customCols = columns.filter((c) => c?.groupBy === "Custom Columns");
-
-      // Custom columns as one movable group at the first custom's position
-      // (marryChildren + groupId keep it draggable across rebuilds).
+      // Custom columns flat (ungrouped), in store order.
       const columnDefsResult = [];
-      let customGroupEmitted = false;
       for (const c of columns) {
         if (c?.groupBy === "Annotation Metrics") continue;
+        bottomRowObj[c?.id] = c?.average ? `${c?.average}` : null;
         if (c?.groupBy === "Custom Columns") {
-          if (customGroupEmitted) continue;
-          customGroupEmitted = true;
-          columnDefsResult.push({
-            headerName: "Custom Columns",
-            groupId: "custom-columns",
-            marryChildren: true,
-            children: customCols.map((cc) => {
-              bottomRowObj[cc?.id] = cc?.average ? `${cc?.average}` : null;
-              const colDef = getTraceListColumnDefs(cc);
-              return { ...colDef, minWidth: 200, flex: 1 };
-            }),
-          });
+          const colDef = getTraceListColumnDefs(c);
+          columnDefsResult.push({ ...colDef, minWidth: 200, flex: 1 });
           continue;
         }
-        bottomRowObj[c?.id] = c?.average ? `${c?.average}` : null;
         columnDefsResult.push(getTraceListColumnDefs(c));
       }
 

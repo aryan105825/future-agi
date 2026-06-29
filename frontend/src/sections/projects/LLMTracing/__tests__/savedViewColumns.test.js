@@ -278,4 +278,45 @@ describe("isColumnOrderDirty", () => {
   it("is clean for a non-array columnState", () => {
     expect(isColumnOrderDirty([{ id: "a" }], undefined)).toBe(false);
   });
+
+  it("ignores hidden cols so a custom col saved between hidden cols clears on drag-back (TH-6119)", () => {
+    // Saved order wedges `cust` between two hidden columns — unreachable by drag.
+    const savedWithHidden = [
+      { colId: "a" },
+      { colId: "b" },
+      { colId: "hidden1" },
+      { colId: "hidden2" },
+      { colId: "cust" },
+      { colId: "c" },
+    ];
+    // `cust` at its visible-original spot; hidden1/2 hidden → visible order matches.
+    const current = [
+      { id: "a" },
+      { id: "b" },
+      { id: "cust" },
+      { id: "hidden1", isVisible: false },
+      { id: "hidden2", isVisible: false },
+      { id: "c" },
+    ];
+    expect(isColumnOrderDirty(current, savedWithHidden)).toBe(false);
+  });
+
+  it("is still dirty when a visible col is genuinely moved among visible cols", () => {
+    const savedWithHidden = [
+      { colId: "a" },
+      { colId: "b" },
+      { colId: "hidden1" },
+      { colId: "cust" },
+      { colId: "c" },
+    ];
+    // `cust` moved before `b` → visible order [a, cust, b, c] ≠ saved [a, b, cust, c].
+    const current = [
+      { id: "a" },
+      { id: "cust" },
+      { id: "b" },
+      { id: "hidden1", isVisible: false },
+      { id: "c" },
+    ];
+    expect(isColumnOrderDirty(current, savedWithHidden)).toBe(true);
+  });
 });

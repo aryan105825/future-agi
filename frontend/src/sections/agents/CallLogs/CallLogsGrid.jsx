@@ -278,7 +278,6 @@ const CallLogsGrid = React.forwardRef(function CallLogsGrid(
     const visMap = {};
     const orderIndex = new Map();
     const customCols = [];
-    let firstCustomIdx = -1;
     (columnVisibility || []).forEach((c, i) => {
       if (c.field) {
         visMap[c.field] = c.isVisible !== false;
@@ -286,20 +285,15 @@ const CallLogsGrid = React.forwardRef(function CallLogsGrid(
       }
       if (c.groupBy === "Custom Columns") {
         customCols.push(c);
-        if (firstCustomIdx === -1) firstCustomIdx = i;
+        // colId key so customs sort into their own store position.
+        orderIndex.set(c.id, i);
       }
     });
 
-    const updated = callLogsColumnDefs
-      .map((col) => ({
-        ...col,
-        ...(col.field && col.field in visMap && { hide: !visMap[col.field] }),
-      }))
-      .sort((a, b) => {
-        const ai = orderIndex.get(a?.field) ?? Infinity;
-        const bi = orderIndex.get(b?.field) ?? Infinity;
-        return ai - bi;
-      });
+    const updated = callLogsColumnDefs.map((col) => ({
+      ...col,
+      ...(col.field && col.field in visMap && { hide: !visMap[col.field] }),
+    }));
 
     // Add column defs for custom columns not already in the grid
     const existingFields = new Set(callLogsColumnDefs.map((c) => c.field));
@@ -346,22 +340,14 @@ const CallLogsGrid = React.forwardRef(function CallLogsGrid(
         },
       }));
 
-    // Movable group at the first custom's store position (marryChildren +
-    // groupId keep it draggable as a unit across rebuilds).
-    if (newCustomDefs.length > 0) {
-      const group = {
-        headerName: "Custom Columns",
-        groupId: "custom-columns",
-        marryChildren: true,
-        children: newCustomDefs,
-      };
-      let insertAt = updated.findIndex(
-        (col) => (orderIndex.get(col?.field) ?? Infinity) > firstCustomIdx,
-      );
-      if (insertAt === -1) insertAt = updated.length;
-      return [...updated.slice(0, insertAt), group, ...updated.slice(insertAt)];
-    }
-    return updated;
+    // Sort base + custom together so customs sit flat at their own positions.
+    const combined = [...updated, ...newCustomDefs];
+    combined.sort((a, b) => {
+      const ai = orderIndex.get(a?.field ?? a?.colId) ?? Infinity;
+      const bi = orderIndex.get(b?.field ?? b?.colId) ?? Infinity;
+      return ai - bi;
+    });
+    return combined;
   }, [callLogsColumnDefs, columnVisibility, isLoading]);
   useEffect(() => {
     return () => {

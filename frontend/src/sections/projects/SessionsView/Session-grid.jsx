@@ -155,7 +155,9 @@ const SessionGrid = React.forwardRef(
       const bottomRowObj = {};
 
       for (const eachCol of columns) {
-        if (eachCol?.groupBy) {
+        // Bucket each custom col alone so it stays flat in its store position
+        // (a shared bucket collapsed them together and oscillated the order).
+        if (eachCol?.groupBy && eachCol.groupBy !== "Custom Columns") {
           if (!grouping[eachCol?.groupBy]) {
             grouping[eachCol?.groupBy] = [eachCol];
           } else {
@@ -166,12 +168,13 @@ const SessionGrid = React.forwardRef(
         }
       }
 
-      const columnDefsResult = Object.entries(grouping).map(([group, cols]) => {
-        if (cols.length === 1) {
-          const c = cols[0];
-          bottomRowObj[c?.id] = c?.average ? `${c?.average}` : null;
-          return getSessionListColumnDef(c);
-        } else {
+      const columnDefsResult = Object.entries(grouping).flatMap(
+        ([group, cols]) => {
+          if (cols.length === 1) {
+            const c = cols[0];
+            bottomRowObj[c?.id] = c?.average ? `${c?.average}` : null;
+            return getSessionListColumnDef(c);
+          }
           // marryChildren + groupId keep the group movable across rebuilds.
           return {
             headerName: group,
@@ -182,8 +185,8 @@ const SessionGrid = React.forwardRef(
               return getSessionListColumnDef(c);
             }),
           };
-        }
-      });
+        },
+      );
 
       return {
         columnDefs: columnDefsResult,

@@ -102,12 +102,16 @@ export const isColumnVisibilityDirty = (slotColumns, columnState) => {
 };
 
 // True when the current column order diverges from the saved view's columnState
-// order. Compares only the cols present in both (added/removed cols are caught
-// by the visibility/custom-column checks).
+// order (intersection only). Compares VISIBLE columns only — the user can't
+// reorder hidden cols, so a col saved between hidden cols is unreachable by drag
+// and a full-order compare would stay dirty forever (TH-6119).
 export const isColumnOrderDirty = (slotColumns, columnState) => {
   if (!Array.isArray(columnState)) return false;
   const savedOrder = columnStateToOrder(columnState);
-  const currentIds = (slotColumns || []).map((c) => c?.id).filter(Boolean);
+  const currentIds = (slotColumns || [])
+    .filter((c) => c?.isVisible !== false)
+    .map((c) => c?.id)
+    .filter(Boolean);
   const currentSet = new Set(currentIds);
   const savedSet = new Set(savedOrder);
   const currentSeq = currentIds.filter((id) => savedSet.has(id));

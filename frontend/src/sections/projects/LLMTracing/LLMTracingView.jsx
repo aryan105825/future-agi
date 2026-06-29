@@ -607,6 +607,17 @@ const DEFAULT_DISPLAY_CONFIG = {
   customColumns: [],
 };
 
+// The view's tab slot from its columnState name column — selectedTab lags
+// activeViewConfig on a cross-type switch, so don't key off it.
+const slotKeyFromColumnState = (columnState, fallbackSlotKey) => {
+  const ids = (Array.isArray(columnState) ? columnState : []).map(
+    (c) => c?.colId,
+  );
+  if (ids.includes("span_name")) return "primary-spans";
+  if (ids.includes("trace_name")) return "primary-trace";
+  return fallbackSlotKey;
+};
+
 const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
   const isUserMode = mode === "user";
   const { role } = useAuthContext();
@@ -948,6 +959,8 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
   const pendingSavedColsRef = useRef(null);
   // Re-apply only fires on id-set change, so a manual drag/toggle isn't reverted.
   const appliedIdSetKeyRef = useRef(null);
+  // Suppress the Save-view dirty signal while a saved view is still hydrating.
+  const [isHydratingView, setIsHydratingView] = useState(false);
   // Canonical order per grid, to restore default when leaving a saved view.
   const canonicalTraceOrderRef = useRef(null);
   const canonicalSpanOrderRef = useRef(null);
@@ -1796,6 +1809,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
       pendingColumnStateRef.current = null;
       pendingSavedColsRef.current = null;
       appliedIdSetKeyRef.current = null;
+      setIsHydratingView(false);
       userToggledColsRef.current = new Set();
       primaryTracePendingRef.current = [];
       compareTracePendingRef.current = [];
@@ -1899,8 +1913,18 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     if (display.hasEvalFilter !== undefined)
       setHasEvalFilter(display.hasEvalFilter);
 
-    // Strip existing customs so view → view doesn't show the union of both
-    // sets (which would also dirty-flag the Save view button).
+    // Route hydration by the view's own tab type (selectedTab lags on a
+    // cross-type switch and would mis-route customs into the wrong slot).
+    const savedColIds = (display.columnState || []).map((c) => c?.colId);
+    const viewTabType = savedColIds.includes("span_name")
+      ? "spans"
+      : savedColIds.includes("trace_name")
+        ? "trace"
+        : selectedTab;
+    if (selectedTab !== viewTabType) setSelectedTab(viewTabType);
+
+    // Strip customs from all slots + reset all pending refs so a prior view's
+    // queued customs can't drain into this view's slot.
     setColumns((prev) => {
       const next = {};
       Object.keys(prev).forEach((ck) => {
@@ -1910,12 +1934,15 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
       });
       return next;
     });
+    primaryTracePendingRef.current = [];
+    compareTracePendingRef.current = [];
+    primarySpansPendingRef.current = [];
+    compareSpansPendingRef.current = [];
 
-    // Populate both primary and compare refs for the active tab type so a
-    // compare-mode toggle later hydrates correctly. Shallow-clone per slot
-    // so mutations don't write through into the saved-views query cache.
+    // Queue this view's customs into its own tab's refs (primary + compare for a
+    // later compare-mode toggle). Clone per slot so we don't mutate the cache.
     if (display.customColumns?.length > 0) {
-      if (selectedTab === "trace") {
+      if (viewTabType === "trace") {
         primaryTracePendingRef.current = display.customColumns.map((c) => ({
           ...c,
         }));
@@ -1963,6 +1990,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     // by the next columnDefs rebuild); the [columns] effect re-applies for cols
     // that merge in later.
     if (Array.isArray(display.columnState) && display.columnState.length > 0) {
+      setIsHydratingView(true);
       userToggledColsRef.current = new Set();
       setColumns((prev) =>
         applySavedColumns(
@@ -1975,7 +2003,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
       appliedIdSetKeyRef.current = null;
 
       const activeApi =
-        selectedTab === "trace"
+        viewTabType === "trace"
           ? primaryTraceGridRef.current?.api
           : primarySpanGridRef.current?.api;
       if (activeApi?.applyColumnState) {
@@ -1991,7 +2019,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     // dateFilter lives inside display because the backend serializer only
     // whitelists `display` for arbitrary sub-keys.
     if (display.dateFilter) {
-      if (selectedTab === "trace") {
+      if (viewTabType === "trace") {
         setPrimaryTraceDateFilter(display.dateFilter);
       } else {
         setPrimarySpanDateFilter(display.dateFilter);
@@ -2007,7 +2035,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
         id: f.id || getRandomId(),
       }),
     );
-    if (selectedTab === "trace") {
+    if (viewTabType === "trace") {
       setPrimaryTraceFilters(nextFilters);
     } else {
       setPrimarySpanFilters(nextFilters);
@@ -2028,7 +2056,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
       ...f,
       id: f.id || getRandomId(),
     }));
-    if (selectedTab === "trace") {
+    if (viewTabType === "trace") {
       setCompareTraceFilters(nextCompareFilters);
       if (activeViewConfig.compareDateFilter !== undefined) {
         setCompareTraceDateFilter(activeViewConfig.compareDateFilter);
@@ -2050,8 +2078,12 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     let attempts = 0;
     let timer = null;
     const tryApply = () => {
+      const slotKey = slotKeyFromColumnState(
+        pendingColumnStateRef.current,
+        selectedTab === "trace" ? "primary-trace" : "primary-spans",
+      );
       const api =
-        selectedTab === "trace"
+        slotKey === "primary-trace"
           ? primaryTraceGridRef.current?.api
           : primarySpanGridRef.current?.api;
       if (
@@ -2080,8 +2112,11 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
   useEffect(() => {
     if (pendingSavedColsRef.current) {
       // Re-apply only on id-set change, so a manual drag/toggle isn't reverted.
-      const slotKey =
-        selectedTab === "trace" ? "primary-trace" : "primary-spans";
+      // Slot from the view's own columnState (not selectedTab, which lags).
+      const slotKey = slotKeyFromColumnState(
+        pendingSavedColsRef.current,
+        selectedTab === "trace" ? "primary-trace" : "primary-spans",
+      );
       const idSetKey = (columns[slotKey] || [])
         .map((c) => c?.id)
         .sort()
@@ -2095,10 +2130,28 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
         );
         if (next !== columns) setColumns(next);
       }
+      // Hydration done once all the view's custom columns have merged in.
+      const savedCustomIds = Array.isArray(
+        activeViewConfig?.display?.customColumns,
+      )
+        ? activeViewConfig.display.customColumns.map((c) => c?.id)
+        : [];
+      const curCustomIds = new Set(
+        (columns[slotKey] || [])
+          .filter((c) => c?.groupBy === "Custom Columns")
+          .map((c) => c?.id),
+      );
+      if (savedCustomIds.every((id) => curCustomIds.has(id))) {
+        setIsHydratingView(false);
+      }
     }
     if (!pendingColumnStateRef.current) return;
+    const drainSlotKey = slotKeyFromColumnState(
+      pendingColumnStateRef.current,
+      selectedTab === "trace" ? "primary-trace" : "primary-spans",
+    );
     const api =
-      selectedTab === "trace"
+      drainSlotKey === "primary-trace"
         ? primaryTraceGridRef.current?.api
         : primarySpanGridRef.current?.api;
     if (!api?.applyColumnState) return;
@@ -2109,6 +2162,14 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     pendingColumnStateRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns]);
+
+  // Fallback: release the gate even if a saved custom col never loads, so the
+  // Save-view button can't get stuck hidden (the merge check above clears sooner).
+  useEffect(() => {
+    if (!isHydratingView) return undefined;
+    const t = setTimeout(() => setIsHydratingView(false), 2500);
+    return () => clearTimeout(t);
+  }, [isHydratingView]);
 
   // ---------------------------------------------------------------------------
   // View persistence — auto-save display + reset/default
@@ -2281,13 +2342,24 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
         ? primaryTraceGridRef.current?.api
         : primarySpanGridRef.current?.api;
     // Voice (CallLogsGrid) has no grid api here — derive columnState from the store.
-    const columnState =
+    const rawColumnState =
       projectSource === PROJECT_SOURCE.SIMULATOR
         ? (columns[columnKey] || []).map((c) => ({
             colId: c.id,
             hide: c.isVisible === false,
           }))
         : activeGridApi?.getColumnState?.() ?? undefined;
+    // Dedup colIds before persisting — the store-derived save path bypasses
+    // AG Grid's own colId uniqueness.
+    const seenColIds = new Set();
+    const columnState = Array.isArray(rawColumnState)
+      ? rawColumnState.filter((c) => {
+          if (c?.colId == null) return true;
+          if (seenColIds.has(c.colId)) return false;
+          seenColIds.add(c.colId);
+          return true;
+        })
+      : rawColumnState;
     const currentDisplay = {
       viewMode,
       cellHeight,
@@ -2521,20 +2593,35 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
   // save-as-new — we don't want Save view cluttering the toolbar there.
   const canSaveView = useMemo(() => {
     if (!activeViewConfig) return false;
+    // Still hydrating → transient mismatches aren't user edits.
+    if (isHydratingView) return false;
 
     const baselineDisplay = activeViewConfig.display || {};
     const baselineExtraFilters = activeViewConfig.extraFilters || [];
     const baselineDateOption = baselineDisplay.dateFilter?.dateOption ?? null;
     const baselineColumnFilters = activeViewConfig.filters || [];
 
+    // Compare against the view's own tab type (selectedTab can point at the
+    // other table mid cross-type switch and falsely flag dirty).
+    const savedColIds = Array.isArray(baselineDisplay.columnState)
+      ? baselineDisplay.columnState.map((c) => c?.colId)
+      : [];
+    const viewTabType = savedColIds.includes("span_name")
+      ? "spans"
+      : savedColIds.includes("trace_name")
+        ? "trace"
+        : selectedTab;
+    const viewSlotKey =
+      viewTabType === "spans" ? "primary-spans" : "primary-trace";
+
     if (!filtersContentEqual(extraFilters, baselineExtraFilters)) return true;
 
     const currentDate =
-      selectedTab === "trace" ? primaryTraceDateFilter : primarySpanDateFilter;
+      viewTabType === "trace" ? primaryTraceDateFilter : primarySpanDateFilter;
     if ((currentDate?.dateOption ?? null) !== baselineDateOption) return true;
 
     const columnFilters =
-      selectedTab === "trace" ? primaryTraceFilters : primarySpanFilters;
+      viewTabType === "trace" ? primaryTraceFilters : primarySpanFilters;
     if (!filtersContentEqual(columnFilters, baselineColumnFilters)) return true;
 
     if (
@@ -2575,12 +2662,12 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     }
     // Did the user show/hide a regular column since the saved view?
     if (
-      isColumnVisibilityDirty(columns[columnKey], baselineDisplay.columnState)
+      isColumnVisibilityDirty(columns[viewSlotKey], baselineDisplay.columnState)
     ) {
       return true;
     }
     // Did the user reorder columns (or move the custom-columns group)?
-    if (isColumnOrderDirty(columns[columnKey], baselineDisplay.columnState)) {
+    if (isColumnOrderDirty(columns[viewSlotKey], baselineDisplay.columnState)) {
       return true;
     }
     // Custom columns: did the user add/remove a custom column since the
@@ -2588,7 +2675,9 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     const baselineCustom = Array.isArray(baselineDisplay.customColumns)
       ? baselineDisplay.customColumns
       : [];
-    const currentCustom = getCustomColumns() || [];
+    const currentCustom = (columns[viewSlotKey] || []).filter(
+      (c) => c?.groupBy === "Custom Columns",
+    );
     if (currentCustom.length !== baselineCustom.length) return true;
     if (currentCustom.length > 0) {
       const baselineIds = new Set(baselineCustom.map((c) => c?.id));
@@ -2611,9 +2700,8 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
     showNonAnnotated,
     showCompare,
     hasEvalFilter,
-    getCustomColumns,
     columns,
-    columnKey,
+    isHydratingView,
   ]);
 
   // Defer the visibility signal so a view-switch doesn't briefly flip
