@@ -686,7 +686,9 @@ def _extract_recording_urls_from_spans(spans: list[dict]) -> dict[str, str]:
 
     Provider URLs whose rehost has not yet landed are dropped so replay
     setup does not surface a URL that requires customer credentials to
-    fetch.
+    fetch. The mono / stereo candidates are checked independently: if
+    mono is still the raw provider URL but stereo has been rehosted,
+    stereo wins rather than dropping the whole span.
     """
     from tracer.utils.vapi_recording import VapiRecordingService
 
@@ -696,9 +698,13 @@ def _extract_recording_urls_from_spans(spans: list[dict]) -> dict[str, str]:
     recordings_map: dict[str, str] = {}
     for span in spans:
         attrs = merge_span_attrs(span)
-        url = attrs.get(recording_key_mono) or attrs.get(recording_key_stereo)
-        if url and not VapiRecordingService.is_dead_provider_url(url):
-            recordings_map[str(span["trace_id"])] = url
+        for candidate in (
+            attrs.get(recording_key_mono),
+            attrs.get(recording_key_stereo),
+        ):
+            if candidate and not VapiRecordingService.is_dead_provider_url(candidate):
+                recordings_map[str(span["trace_id"])] = candidate
+                break
 
     return recordings_map
 

@@ -501,7 +501,16 @@ def fetch_voice_trace_comparison_transcripts(
 
 
 def fetch_baseline_trace_recordings(trace_id: str, _span: dict | None = None) -> dict:
-    """Fetch recording URLs from the baseline voice trace's conversation span."""
+    """Fetch recording URLs from the baseline voice trace's conversation span.
+
+    Reads from the ``conversation.recording.*`` span attributes that the
+    rehost pipeline overwrites with S3 URLs after upload. Any URL still
+    pointing at a Vapi provider host (rehost pending or failed) is
+    dropped so the comparison view does not surface a URL that requires
+    Bearer credentials to fetch.
+    """
+    from tracer.utils.vapi_recording import VapiRecordingService
+
     try:
         span = _span or fetch_voice_conversation_span(trace_id)
     except ValueError:
@@ -511,53 +520,83 @@ def fetch_baseline_trace_recordings(trace_id: str, _span: dict | None = None) ->
     recordings = {}
     for label, attr_key in RECORDING_ATTR_KEYS.items():
         url = sa.get(attr_key)
-        if url:
+        if url and not VapiRecordingService.is_dead_provider_url(url):
             recordings[label] = url
     return recordings
 
 
 def fetch_simulated_call_recordings(call_execution: CallExecution) -> dict:
-    """Fetch recording URLs from a simulated CallExecution's provider_call_data."""
+    """Fetch recording URLs from a simulated CallExecution.
+
+    Order:
+      1. Model-level fields (``recording_url``, ``stereo_recording_url``)
+         — these are the durable S3 mirror the rehost pipeline writes to.
+      2. Only if the model fields are absent, fall back to walking
+         ``provider_call_data.<provider>.artifact.recording.*`` — the
+         raw ingest snapshot, which still holds the original Vapi URL.
+
+    Any URL still pointing at a Vapi provider host is dropped so this
+    reader never surfaces a URL that requires Bearer credentials to
+    fetch.
+    """
+    from tracer.utils.vapi_recording import VapiRecordingService
+
+    def _safe(url):
+        if not url or VapiRecordingService.is_dead_provider_url(url):
+            return None
+        return url
+
+    # Prefer the durable S3 mirror on CallExecution. This is what the
+    # rehost pipeline writes to after upload — reading it first means a
+    # dead Vapi URL in the raw ingest snapshot never wins over the
+    # mirrored value.
+    recordings = _fallback_model_recordings(call_execution)
+    if recordings:
+        return recordings
+
     provider_data = call_execution.provider_call_data
     if not provider_data or not isinstance(provider_data, dict):
-        return _fallback_model_recordings(call_execution)
+        return {}
 
-    # Get provider payload
     if len(provider_data) == 1:
         payload = next(iter(provider_data.values()))
     else:
         payload = provider_data.get("vapi", {})
 
     if not isinstance(payload, dict):
-        return _fallback_model_recordings(call_execution)
+        return {}
 
     recording = (
         payload.get("artifact", {}).get("recording") or payload.get("recording") or {}
     )
     if not isinstance(recording, dict):
-        return _fallback_model_recordings(call_execution)
+        return {}
 
     recordings = {}
     mono = recording.get("mono") or {}
-    if combined_url := mono.get("combinedUrl"):
+    if combined_url := _safe(mono.get("combinedUrl")):
         recordings["mono_combined"] = combined_url
-    if customer_url := mono.get("customerUrl"):
+    if customer_url := _safe(mono.get("customerUrl")):
         recordings["mono_customer"] = customer_url
-    if assistant_url := mono.get("assistantUrl"):
+    if assistant_url := _safe(mono.get("assistantUrl")):
         recordings["mono_assistant"] = assistant_url
-    if stereo_url := recording.get("stereoUrl"):
+    if stereo_url := _safe(recording.get("stereoUrl")):
         recordings["stereo"] = stereo_url
 
-    return recordings or _fallback_model_recordings(call_execution)
+    return recordings
 
 
 def _fallback_model_recordings(call_execution: CallExecution) -> dict:
-    """Fallback to model-level recording URL fields."""
+    """Read the durable S3-mirrored recording URLs off the model."""
+    from tracer.utils.vapi_recording import VapiRecordingService
+
     recordings = {}
-    if call_execution.stereo_recording_url:
-        recordings["stereo"] = call_execution.stereo_recording_url
-    if call_execution.recording_url:
-        recordings["mono_combined"] = call_execution.recording_url
+    stereo = call_execution.stereo_recording_url
+    mono = call_execution.recording_url
+    if stereo and not VapiRecordingService.is_dead_provider_url(stereo):
+        recordings["stereo"] = stereo
+    if mono and not VapiRecordingService.is_dead_provider_url(mono):
+        recordings["mono_combined"] = mono
     return recordings
 
 
