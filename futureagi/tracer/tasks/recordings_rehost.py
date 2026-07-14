@@ -102,6 +102,8 @@ def rehost_external_recordings(span_id: str) -> None:
         logger.warning("rehost_external_recordings: span not found", span_id=span_id)
         return
 
+    logger.info("rehost_external_recordings_start", span_id=span_id, provider=span.provider)
+
     api_key = None
     if span.provider == ProviderChoices.VAPI:
         api_key = get_agent_api_key(span.project_id, ProviderChoices.VAPI)
@@ -127,6 +129,7 @@ def rehost_external_recordings(span_id: str) -> None:
         and url_type not in already_billed
     ]
     if not jobs:
+        logger.info("rehost_external_recordings_no_jobs", span_id=span_id, provider=span.provider, reason="all_urls_already_s3_or_billed")
         return
 
     call_id = _resolve_call_id(span)

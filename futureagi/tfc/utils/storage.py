@@ -1328,13 +1328,16 @@ def download_audio_from_url(
             VapiRecordingService,
         )
 
+        logger.info("vapi_authenticated_download_start", call_id=call_id, artifact_type=artifact_type)
         try:
-            return VapiRecordingService.download_artifact_sync(
+            audio_data = VapiRecordingService.download_artifact_sync(
                 call_id=call_id,
                 artifact_type=artifact_type,
                 api_key=api_key,
                 timeout_seconds=timeout,
             )
+            logger.info("vapi_authenticated_download_succeeded", call_id=call_id, artifact_type=artifact_type, bytes=len(audio_data))
+            return audio_data
         except (VapiAuthError, VapiArtifactNotReadyError, VapiRateLimitError):
             raise
         except Exception as exc:
@@ -1720,6 +1723,7 @@ def upload_audio_to_s3(
         ensure_bucket(minio_client, bucket_name)
 
         # Upload the audio bytes to S3
+        logger.info("s3_upload_start", bucket=bucket_name, object_key=object_key, bytes=len(audio_bytes))
         with BytesIO(audio_bytes) as audio_buffer:
             minio_client.put_object(
                 bucket_name=bucket_name,
@@ -1759,7 +1763,8 @@ def upload_audio_to_s3(
         return url
 
     except Exception as e:
-        logger.exception(f"Error uploading audio to S3: {str(e)}")
+        error_code = str(e.code) if hasattr(e, "code") else str(e)
+        logger.error("s3_upload_failed", bucket=bucket_name, object_key=object_key, error_code=error_code, exc_info=True)
         raise ValueError(get_error_message("ERROR_AUDIO_UPLOAD").format(str(e))) from e
 
 

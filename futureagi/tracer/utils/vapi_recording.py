@@ -119,7 +119,10 @@ class VapiRecordingService:
         """
         if not url:
             return False
-        return any(host in url for host in _DEAD_PROVIDER_HOSTS)
+        is_dead = any(host in url for host in _DEAD_PROVIDER_HOSTS)
+        if is_dead:
+            logger.debug("vapi_dead_provider_url_detected", url=url, reason="provider host requires Bearer auth")
+        return is_dead
 
     @classmethod
     def is_s3_url(cls, url: Optional[str]) -> bool:
@@ -305,6 +308,7 @@ class VapiRecordingService:
         the redirected URL.
         """
         cls._require_download_args(call_id, artifact_type, api_key)
+        logger.info("vapi_download_artifact_start", call_id=call_id, artifact_type=artifact_type)
         url = cls.build_artifact_url(call_id, artifact_type)
         headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -321,7 +325,9 @@ class VapiRecordingService:
                     error=str(exc),
                 )
                 raise
-            return cls._raise_or_return_body(response, call_id, artifact_type)
+            result = cls._raise_or_return_body(response, call_id, artifact_type)
+            logger.info("vapi_download_artifact_succeeded", call_id=call_id, artifact_type=artifact_type, bytes=len(result))
+            return result
 
     @classmethod
     def download_artifact_sync(
@@ -334,6 +340,7 @@ class VapiRecordingService:
     ) -> bytes:
         """Synchronous variant of :meth:`download_artifact_async`."""
         cls._require_download_args(call_id, artifact_type, api_key)
+        logger.info("vapi_download_artifact_start", call_id=call_id, artifact_type=artifact_type)
         url = cls.build_artifact_url(call_id, artifact_type)
         headers = {"Authorization": f"Bearer {api_key}"}
 
@@ -350,7 +357,9 @@ class VapiRecordingService:
                     error=str(exc),
                 )
                 raise
-            return cls._raise_or_return_body(response, call_id, artifact_type)
+            result = cls._raise_or_return_body(response, call_id, artifact_type)
+            logger.info("vapi_download_artifact_succeeded", call_id=call_id, artifact_type=artifact_type, bytes=len(result))
+            return result
 
     @staticmethod
     def _require_download_args(
@@ -461,13 +470,19 @@ class VapiRecordingService:
         """
         attrs = dict(span.span_attributes or {}) if span is not None else {}
 
+        logger.info("mirror_s3_url_to_consumer_fields", call_id=call_id, url_types=list(s3_url_by_url_type.keys()))
+
         mono_s3 = s3_url_by_url_type.get("mono_combined")
         stereo_s3 = s3_url_by_url_type.get("stereo")
 
         if mono_s3 and not cls.is_s3_url(attrs.get("recording_url")):
             attrs["recording_url"] = mono_s3
+        elif mono_s3:
+            logger.debug("mirror_s3_url_skip_already_s3", field="recording_url", call_id=call_id, existing=attrs.get("recording_url"))
         if stereo_s3 and not cls.is_s3_url(attrs.get("stereo_recording_url")):
             attrs["stereo_recording_url"] = stereo_s3
+        elif stereo_s3:
+            logger.debug("mirror_s3_url_skip_already_s3", field="stereo_recording_url", call_id=call_id, existing=attrs.get("stereo_recording_url"))
 
         if call_id and (mono_s3 or stereo_s3):
             cls._mirror_to_call_execution(call_id, mono_s3, stereo_s3)

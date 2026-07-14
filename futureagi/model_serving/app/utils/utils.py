@@ -32,6 +32,7 @@ def download_audio_from_url(
     # caller supplies the provider call context.  Lazy import so this
     # module degrades gracefully in environments without tracer.
     if provider == "vapi" and api_key and call_id and artifact_type:
+        logger.info("vapi_authenticated_download_start", call_id=call_id, artifact_type=artifact_type)
         try:
             from tracer.utils.vapi_recording import (
                 VapiArtifactNotReadyError,
@@ -40,12 +41,14 @@ def download_audio_from_url(
                 VapiRecordingService,
             )
 
-            return VapiRecordingService.download_artifact_sync(
+            audio_data = VapiRecordingService.download_artifact_sync(
                 call_id=call_id,
                 artifact_type=artifact_type,
                 api_key=api_key,
                 timeout_seconds=timeout,
             )
+            logger.info("vapi_authenticated_download_succeeded", call_id=call_id, artifact_type=artifact_type, bytes=len(audio_data))
+            return audio_data
         except (VapiAuthError, VapiArtifactNotReadyError, VapiRateLimitError):
             raise
         except Exception:

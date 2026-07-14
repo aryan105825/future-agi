@@ -22,6 +22,7 @@ export function isDeadVapiUrl(url) {
   );
   if (!hasProviderHost) return false;
   // An S3 / MinIO URL is always safe regardless of host hints in the path.
+  console.warn("[safeAudioUrl] blocking dead Vapi provider URL", url);
   return !S3_URL_MARKERS.some((marker) => url.includes(marker));
 }
 
@@ -37,5 +38,9 @@ export function isDeadVapiUrl(url) {
  */
 export function safeAudioUrl(url) {
   if (!url || typeof url !== "string") return null;
-  return isDeadVapiUrl(url) ? null : url;
+  if (isDeadVapiUrl(url)) {
+    console.warn("[safeAudioUrl] returning null for", url);
+    return null;
+  }
+  return url;
 }

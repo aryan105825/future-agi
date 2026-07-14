@@ -48,12 +48,15 @@ async def download_audio_from_url_async(
     if provider == "vapi" and api_key and call_id and artifact_type:
         from tracer.utils.vapi_recording import VapiRecordingService
 
-        return await VapiRecordingService.download_artifact_async(
+        logger.info("vapi_async_download_start", call_id=call_id, artifact_type=artifact_type)
+        audio_bytes = await VapiRecordingService.download_artifact_async(
             call_id=call_id,
             artifact_type=artifact_type,
             api_key=api_key,
             timeout_seconds=timeout,
         )
+        logger.info("vapi_async_download_succeeded", call_id=call_id, artifact_type=artifact_type, bytes=len(audio_bytes))
+        return audio_bytes
 
     if not audio_url:
         raise ValueError("audio_url is required for unauthenticated download")
@@ -151,7 +154,7 @@ async def _convert_audio_url_to_s3_async_with_size(
         return s3_url, len(audio_bytes)
 
     except Exception as e:
-        logger.error(f"Error converting {url_type} URL to S3: {e}")
+        logger.error("s3_conversion_failed", url_type=url_type, provider=provider, artifact_type=artifact_type, call_id=call_id, error=str(e), exc_info=True)
         return audio_url, 0
 
 

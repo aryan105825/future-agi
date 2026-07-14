@@ -356,6 +356,7 @@ class ObservabilityService:
             or raw_log.get("artifact", {}).get("recording", {}).get("mono", {}).get("combinedUrl")  # (c) new shape
             or raw_log.get("recordingUrl")                                 # (d) legacy, NOT under artifact
         )
+        logger.debug("vapi_recording_url_flat_alias", call_id=call_id, recording_url=recording_url)
 
         # Stereo recording — same order as mono.
         stereo_recording_url = (
@@ -723,9 +724,13 @@ class ObservabilityService:
                 processed.get("recording_url")
             ):
                 processed["recording_url"] = mono_s3
+            elif mono_s3:
+                logger.debug("vapi_recording_url_already_s3_skipping_override", mono_s3=mono_s3, current=processed.get("recording_url"))
             if stereo_s3 and not VapiRecordingService.is_s3_url(
                 processed.get("stereo_recording_url")
             ):
                 processed["stereo_recording_url"] = stereo_s3
+            elif stereo_s3:
+                logger.debug("vapi_recording_url_already_s3_skipping_override", stereo_s3=stereo_s3, current=processed.get("stereo_recording_url"))
 
         return processed
