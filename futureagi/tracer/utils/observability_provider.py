@@ -296,7 +296,7 @@ def process_and_store_logs(
     """
     project = provider.project
 
-    if provider.provider == "vapi" and api_key is None:
+    if provider.provider == ProviderChoices.VAPI and api_key is None:
         try:
             from tracer.selectors import get_agent_api_key
 
@@ -308,9 +308,9 @@ def process_and_store_logs(
             )
 
     normalization_functions = {
-        "vapi": lambda log: normalize_vapi_data(log, api_key=api_key),
-        "retell": normalize_retell_data,
-        "eleven_labs": normalize_eleven_labs_data,
+        ProviderChoices.VAPI: lambda log: normalize_vapi_data(log, api_key=api_key),
+        ProviderChoices.RETELL: normalize_retell_data,
+        ProviderChoices.ELEVEN_LABS: normalize_eleven_labs_data,
     }
 
     if provider.provider not in normalization_functions:

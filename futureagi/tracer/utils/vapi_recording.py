@@ -131,6 +131,28 @@ class VapiRecordingService:
         return True
 
     @classmethod
+    def is_authenticated_download(
+        cls,
+        provider: Optional[str],
+        api_key: Optional[str],
+        call_id: Optional[str],
+        artifact_type: Optional[str],
+    ) -> bool:
+        """True when the caller has enough context to fetch a Vapi
+        artifact via the authenticated endpoint. Every downloader in the
+        codebase (`tfc/utils/storage.py`, `simulate/temporal/utils/async_storage.py`,
+        etc.) delegates the routing decision here so there's a single
+        source of truth for what counts as a Vapi auth call.
+        """
+        if not (api_key and call_id and artifact_type):
+            return False
+        # Lazy import so this method can be called from low-level utils
+        # that must not create a Django-app-order dependency at module load.
+        from tracer.models.observability_provider import ProviderChoices
+
+        return provider == ProviderChoices.VAPI
+
+    @classmethod
     def is_s3_url(cls, url: Optional[str]) -> bool:
         """True if ``url`` is a durable S3 / MinIO URL (safe to serve)."""
         if not url:
@@ -258,13 +280,14 @@ class VapiRecordingService:
     ) -> Optional[str]:
         try:
             from simulate.models.agent_definition import AgentDefinition
+            from tracer.models.observability_provider import ProviderChoices
         except Exception:
             return None
 
         agent_def = (
             AgentDefinition.objects.filter(
                 observability_provider__project_id=project_id,
-                provider="vapi",
+                provider=ProviderChoices.VAPI,
             )
             .exclude(api_key__isnull=True)
             .exclude(api_key="")

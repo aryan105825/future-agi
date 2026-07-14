@@ -1320,13 +1320,16 @@ def download_audio_from_url(
     # Route Vapi fetches through the authenticated endpoint. Signed URLs
     # are single-use / short-lived; the service re-issues per call, so
     # we do not cache the redirect target.
-    if provider == "vapi" and api_key and call_id and artifact_type:
-        from tracer.utils.vapi_recording import (
-            VapiArtifactNotReadyError,
-            VapiAuthError,
-            VapiRateLimitError,
-            VapiRecordingService,
-        )
+    from tracer.utils.vapi_recording import (
+        VapiArtifactNotReadyError,
+        VapiAuthError,
+        VapiRateLimitError,
+        VapiRecordingService,
+    )
+
+    if VapiRecordingService.is_authenticated_download(
+        provider, api_key, call_id, artifact_type
+    ):
 
         logger.info("vapi_authenticated_download_start", call_id=call_id, artifact_type=artifact_type)
         try:

@@ -39,15 +39,15 @@ async def download_audio_from_url_async(
 ) -> bytes:
     """Async download of an audio file to bytes.
 
-    When ``provider == "vapi"`` and all of ``api_key`` / ``call_id`` /
-    ``artifact_type`` are supplied, the download routes through
-    :meth:`VapiRecordingService.download_artifact_async` (authenticated
-    endpoint, Bearer token, 302 follow). Otherwise, the download is a
-    plain unauthenticated stream against ``audio_url``.
+    When ``provider`` is ``ProviderChoices.VAPI`` and all of ``api_key``
+    / ``call_id`` / ``artifact_type`` are supplied, the download routes
+    through :meth:`VapiRecordingService.download_artifact_async`
+    (authenticated endpoint, Bearer token, 302 follow). Otherwise, the
+    download is a plain unauthenticated stream against ``audio_url``.
     """
-    if provider == "vapi" and api_key and call_id and artifact_type:
-        from tracer.utils.vapi_recording import VapiRecordingService
+    from tracer.utils.vapi_recording import VapiRecordingService
 
+    if VapiRecordingService.is_authenticated_download(provider, api_key, call_id, artifact_type):
         logger.info("vapi_async_download_start", call_id=call_id, artifact_type=artifact_type)
         audio_bytes = await VapiRecordingService.download_artifact_async(
             call_id=call_id,
@@ -113,8 +113,10 @@ async def _convert_audio_url_to_s3_async_with_size(
     ``bytes_uploaded_to_s3`` is 0 when the source URL was already on S3
     or the upload did not succeed.
     """
-    vapi_authenticated = bool(
-        provider == "vapi" and api_key and call_id and artifact_type
+    from tracer.utils.vapi_recording import VapiRecordingService
+
+    vapi_authenticated = VapiRecordingService.is_authenticated_download(
+        provider, api_key, call_id, artifact_type
     )
 
     if not audio_url and not vapi_authenticated:
