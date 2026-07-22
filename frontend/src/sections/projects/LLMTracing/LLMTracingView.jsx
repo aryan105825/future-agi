@@ -3552,7 +3552,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
                     margin: theme.spacing(0),
                     px: theme.spacing(1.875),
                   }}
-                  label="Primary Graph"
+                  label={effectiveViewMode === "graph" ? "Primary Graph" : "Primary Data"}
                   value="primary"
                 />
                 <Tab
@@ -3560,7 +3560,7 @@ const LLMTracingView = ({ mode = "project", userIdForUserMode = null }) => {
                     margin: theme.spacing(0),
                     px: theme.spacing(1.875),
                   }}
-                  label="Comparison Graph"
+                  label={effectiveViewMode === "graph" ? "Comparison Graph" : "Comparison Data"}
                   value="compare"
                 />
               </Tabs>
